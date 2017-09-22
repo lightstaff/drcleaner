@@ -1,0 +1,17 @@
+hash: 8169131ac726629f67af993085c15e544595d73920790e9c4b52f96de2feed32
+updated: 2017-09-22T08:47:37.196793808+09:00
+imports:
+- name: github.com/Sirupsen/logrus
+  version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
+- name: github.com/urfave/cli
+  version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
+- name: golang.org/x/crypto
+  version: 7d9177d70076375b9a59c8fde23d52d9c4a7ecd5
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/sys
+  version: 2320a9c15898af1b1b24f99700d5c1e957f9d8cf
+  subpackages:
+  - unix
+  - windows
+testImports: []
