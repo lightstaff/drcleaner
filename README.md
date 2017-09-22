@@ -10,7 +10,7 @@ go get -u github.com/lightstaff/drcleaner
 
 ### Command Example
 ```sh
-drcleaner -U=<user regitry url> -T=<target tag1>,<target tag2> <target image>
+drcleaner -U=<user regitry url> -T={<target tag1>,<target tag2>} <target image>
 ```
 
 ### Options
