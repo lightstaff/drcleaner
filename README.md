@@ -7,11 +7,13 @@ go get -u github.com/lightstaff/drcleaner
 ```
 
 ## Usage
-- tags
+
+### Command Example
 ```sh
-drcleaner tags <target image name>
+drcleaner -U=<user regitry url> -T=<target tag1>,<target tag2> <target image>
 ```
-- rm
-```sh
-drcleaner rm <target image name> <optional: target tag>
-```
+
+### Options
+- *-url* or *-U* is Tareget URL (Default: localhost:5000)
+- *-tags* or *-T* is Target tags (If not set delete all)
+- *-verbose* or *-V* is show varbose

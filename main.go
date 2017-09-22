@@ -7,13 +7,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
 var log = logrus.New()
+var client http.Client
 
 func main() {
 	log.Out = os.Stdout
@@ -31,9 +31,6 @@ func main() {
 		cli.StringSliceFlag{
 			Name: "tags, T",
 		},
-		cli.BoolFlag{
-			Name: "verbose, V",
-		},
 	}
 
 	app.Action = action
@@ -47,100 +44,59 @@ type tagsModel struct {
 }
 
 func action(c *cli.Context) error {
-	vb := c.Bool("V")
-
-	if vb {
-		log.Info("start!!")
+	if c.NArg() == 0 {
+		err := errors.New("please input image name")
+		log.Error(err.Error())
+		return err
 	}
+
+	log.Info("docker registry cleaner start!!")
 
 	i := c.Args().First()
 	u := c.String("U")
 	ts := c.StringSlice("T")
 
-	var client http.Client
-
 	if 0 == len(ts) {
-		tags, err := getTags(u, i)
+		log.Infof("start get all tags from %s", i)
+
+		tags, err := getAllTag(u, i)
 		if err != nil {
-			return cli.NewExitError(err.Error(), 86)
+			log.Error(err.Error())
+			return err
 		}
 
-		ts = tags.Tags
-	}
+		ts = tags
 
-	if vb {
-		log.WithFields(logrus.Fields{
-			"url":   u,
-			"image": i,
-			"tags":  strings.Join(ts, ","),
-		}).Info("remove target")
+		log.WithField("tags", tags).Infof("finish get all tags from %s", i)
 	}
 
 	for _, t := range ts {
-		gURL := fmt.Sprintf("%s/v2/%s/manifests/%s", u, i, t)
+		log.Infof("start get digest from %s:%s", i, t)
 
-		gReq, err := http.NewRequest("GET", gURL, nil)
+		d, err := getDigest(u, i, t)
 		if err != nil {
-			return cli.NewExitError(err.Error(), 86)
+			log.Error(err.Error())
+			return err
 		}
 
-		gReq.Header.Add("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+		log.WithField("digest", d).Infof("finish get digest from %s:%s", i, t)
 
-		gRes, err := client.Do(gReq)
-		if err != nil {
-			return cli.NewExitError(err.Error(), 86)
-		}
-		defer gRes.Body.Close()
+		log.WithField("digest", d).Infof("start delete tag from %s:%s", i, t)
 
-		if gRes.StatusCode < 200 && 300 < gRes.StatusCode {
-			return cli.NewExitError(gRes.Status, 86)
+		if err := deleteTag(u, i, d); err != nil {
+			log.Error(err.Error())
+			return err
 		}
 
-		r := gRes.Header.Get("Docker-Content-Digest")
-
-		if vb {
-			log.WithFields(logrus.Fields{
-				"url":                   gURL,
-				"status":                gRes.Status,
-				"status_code":           gRes.StatusCode,
-				"docker_content_digest": r,
-			}).Info("get manifests")
-		}
-
-		dURL := fmt.Sprintf("%s/v2/%s/manifests/%s", u, i, r)
-
-		dReq, err := http.NewRequest("DELETE", dURL, nil)
-		if err != nil {
-			return cli.NewExitError(err.Error(), 86)
-		}
-
-		dRes, err := client.Do(dReq)
-		if err != nil {
-			return cli.NewExitError(err.Error(), 86)
-		}
-		defer dRes.Body.Close()
-
-		if dRes.StatusCode < 200 && 300 < dRes.StatusCode {
-			return cli.NewExitError(dRes.Status, 86)
-		}
-
-		log.WithFields(logrus.Fields{
-			"url":         dURL,
-			"status":      dRes.Status,
-			"status_code": dRes.StatusCode,
-		}).Info("delete tag")
+		log.Infof("finish delete tag from %s:%s", i, t)
 	}
 
-	if vb {
-		log.Info("finished!!")
-	}
+	log.Info("docker registry cleaner finished!!")
 
 	return nil
 }
 
-func getTags(u, i string) (*tagsModel, error) {
-	var client http.Client
-
+func getAllTag(u, i string) ([]string, error) {
 	url := fmt.Sprintf("%s/v2/%s/tags/list", u, i)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -154,7 +110,7 @@ func getTags(u, i string) (*tagsModel, error) {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode < 200 && 300 < res.StatusCode {
+	if res.StatusCode < 200 || 300 < res.StatusCode {
 		return nil, errors.New(res.Status)
 	}
 
@@ -163,11 +119,60 @@ func getTags(u, i string) (*tagsModel, error) {
 		return nil, err
 	}
 
-	var v tagsModel
+	var v map[string]interface{}
 
 	if err := json.Unmarshal(body, &v); err != nil {
 		return nil, err
 	}
 
-	return &v, nil
+	tags, ok := v["tags"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("%s is have not tag", i)
+	}
+
+	return tags, nil
+}
+
+func getDigest(u, i, t string) (string, error) {
+	url := fmt.Sprintf("%s/v2/%s/manifests/%s", u, i, t)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Add("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || 300 < res.StatusCode {
+		return "", errors.New(res.Status)
+	}
+
+	return res.Header.Get("Docker-Content-Digest"), nil
+}
+
+func deleteTag(u, i, d string) error {
+	url := fmt.Sprintf("%s/v2/%s/manifests/%s", u, i, d)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || 300 < res.StatusCode {
+		return errors.New(res.Status)
+	}
+
+	return nil
 }
