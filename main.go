@@ -26,7 +26,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "url, U",
-			Value: "localhost:5000",
+			Value: "http://localhost:5000",
 		},
 		cli.StringSliceFlag{
 			Name: "tags, T",
